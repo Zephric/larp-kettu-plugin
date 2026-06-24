@@ -545,19 +545,94 @@ var LARP_UI_TAG = "v11.1.5";
       if (s == null || typeof s !== "string") return null;
       var t = s.trim();
       if (!t) return null;
-      var d = Date.parse(t);
-      if (!isNaN(d)) return d;
-      var fr = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/);
-      if (fr) {
-        var day = parseInt(fr[1], 10);
-        var mon = parseInt(fr[2], 10) - 1;
-        var yr = parseInt(fr[3], 10);
-        var hr = fr[4] != null ? parseInt(fr[4], 10) : 12;
-        var mn = fr[5] != null ? parseInt(fr[5], 10) : 0;
-        var u = Date.UTC(yr, mon, day, hr, mn, 0, 0);
-        if (!isNaN(u)) return u;
+
+      function fromParts(year, month, day, hour, minute) {
+        if (!isFinite(year) || !isFinite(month) || !isFinite(day)) return null;
+        if (year < 2000 || year > 2100) return null;
+        if (month < 1 || month > 12) return null;
+        if (day < 1 || day > 31) return null;
+        var hr = hour != null && isFinite(hour) ? hour : 12;
+        var mn = minute != null && isFinite(minute) ? minute : 0;
+        if (hr < 0 || hr > 23 || mn < 0 || mn > 59) return null;
+        var u = Date.UTC(year, month - 1, day, hr, mn, 0, 0);
+        if (isNaN(u)) return null;
+        var check = new Date(u);
+        if (
+          check.getUTCFullYear() !== year ||
+          check.getUTCMonth() !== month - 1 ||
+          check.getUTCDate() !== day
+        ) {
+          return null;
+        }
+        return u;
       }
+
+      var ymd = t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:[T\s](\d{1,2}):(\d{2}))?$/);
+      if (ymd) {
+        return fromParts(
+          parseInt(ymd[1], 10),
+          parseInt(ymd[2], 10),
+          parseInt(ymd[3], 10),
+          ymd[4] != null ? parseInt(ymd[4], 10) : null,
+          ymd[5] != null ? parseInt(ymd[5], 10) : null
+        );
+      }
+
+      var dmy = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/);
+      if (dmy) {
+        return fromParts(
+          parseInt(dmy[3], 10),
+          parseInt(dmy[2], 10),
+          parseInt(dmy[1], 10),
+          dmy[4] != null ? parseInt(dmy[4], 10) : null,
+          dmy[5] != null ? parseInt(dmy[5], 10) : null
+        );
+      }
+
+      var iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (iso) {
+        return fromParts(parseInt(iso[1], 10), parseInt(iso[2], 10), parseInt(iso[3], 10));
+      }
+
       return null;
+    }
+
+    function formatMemberSincePreview(ms) {
+      try {
+        return new Date(ms).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC"
+        });
+      } catch (_fmt) {
+        return "";
+      }
+    }
+
+    function getMemberSinceFieldState(raw) {
+      var text = raw == null ? "" : String(raw);
+      var trimmed = text.trim();
+      if (!trimmed) {
+        return {
+          hint: "Examples: 2015-02-08 · 2015/2/8 · 8/2/2015",
+          hintColor: "#b5bac1",
+          borderColor: "#111214"
+        };
+      }
+      var ms = parseAccountDateIsoMs(trimmed);
+      if (ms == null) {
+        return {
+          hint: "Invalid date. Use YYYY-MM-DD, YYYY/M/D, or DD/MM/YYYY",
+          hintColor: "#f23f43",
+          borderColor: "#f23f43"
+        };
+      }
+      return {
+        hint: "Will show: " + formatMemberSincePreview(ms),
+        hintColor: "#57f287",
+        borderColor: "#57f287"
+      };
     }
   
     function getBadgesMap() {
@@ -837,7 +912,7 @@ var LARP_UI_TAG = "v11.1.5";
                       if (/^\d{10,30}$/.test(ids)) sid = ids;
                     }
                   }
-                  if (sid != null && String(sid) === String(cur.id)) return ms;
+                  if (sid != null && String(sid) === String(cur.id)) return Math.trunc(ms);
                   return ret;
                 })
               );
@@ -1220,12 +1295,58 @@ var LARP_UI_TAG = "v11.1.5";
             autoCapitalize: "none",
             onChangeText: function (v) {
               storage[key] = v;
-              refresh();
+              try {
+                refresh();
+              } catch (_fieldRefresh) {}
             }
           })
         );
       }
   
+      function memberSinceField() {
+        var raw = storage.spoofAccountDateIso || "";
+        var state = getMemberSinceFieldState(raw);
+        return React.createElement(View, {
+          style: {
+            paddingHorizontal: 12,
+            paddingVertical: 12,
+            borderTopWidth: 0,
+            borderTopColor: C.line
+          }
+        },
+          React.createElement(Text, {
+            style: { color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: "600" }
+          }, "Account created date"),
+          React.createElement(TextInput, {
+            style: {
+              backgroundColor: C.inset,
+              color: C.text,
+              borderRadius: 6,
+              borderWidth: 1,
+              borderColor: state.borderColor,
+              paddingHorizontal: 10,
+              paddingVertical: 9,
+              fontSize: 15
+            },
+            placeholder: "2015-02-08",
+            placeholderTextColor: "#6d6f78",
+            value: raw,
+            autoCorrect: false,
+            autoCapitalize: "none",
+            keyboardType: "numbers-and-punctuation",
+            onChangeText: function (v) {
+              storage.spoofAccountDateIso = v;
+              try {
+                refresh();
+              } catch (_msRefresh) {}
+            }
+          }),
+          React.createElement(Text, {
+            style: { color: state.hintColor, fontSize: 12, marginTop: 6, lineHeight: 16 }
+          }, state.hint)
+        );
+      }
+
       function badgeRow(b) {
         var on = !!storage.badges[b.id];
         return React.createElement(Pressable, {
@@ -1426,10 +1547,7 @@ var LARP_UI_TAG = "v11.1.5";
   
         section("Other accounts", otherProfilesBlock),
   
-        section(
-          "Member since",
-          field("Date (ISO or DD/MM/YYYY)", storage.spoofAccountDateIso || "", "spoofAccountDateIso", true)
-        ),
+        section("Member since", memberSinceField()),
   
         section("Badges", primaryBadgesBlock),
   
