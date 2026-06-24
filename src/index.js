@@ -835,6 +835,87 @@ var LARP_UI_TAG = "v11.1.5";
       if (!shouldWrapUserForProxy(user)) return user;
       return buildUserProxy(user);
     }
+
+    function getSpoofAccountDateMs() {
+      return parseAccountDateIsoMs(storage.spoofAccountDateIso);
+    }
+
+    function applyMemberSinceToUserRecord(user) {
+      if (!user || typeof user !== "object") return user;
+      var ms = getSpoofAccountDateMs();
+      if (ms == null || !isCurrentUserId(user.id)) return user;
+      var d = new Date(ms);
+      return Object.assign({}, user, {
+        createdTimestamp: ms,
+        createdAtTimestamp: ms,
+        createdAt: d,
+        created_at: d
+      });
+    }
+
+    function spoofProfileRecord(ret, uid) {
+      var ms = getSpoofAccountDateMs();
+      if (ms == null || ret == null) return ret;
+      var id = uid != null ? uid : extractBadgeHookUid(ret);
+      if (!isCurrentUserId(id)) return ret;
+      if (typeof ret !== "object") return ret;
+      var d = new Date(ms);
+      var merged = Object.assign({}, ret, {
+        createdAt: d,
+        memberSince: d,
+        joinedAt: d,
+        createdTimestamp: ms,
+        registrationTimestamp: ms,
+        accountCreatedAt: d,
+        joined_at: d,
+        created_at: d
+      });
+      if (ret.user && typeof ret.user === "object") {
+        merged.user = applyMemberSinceToUserRecord(ret.user);
+      }
+      if (ret.profile && typeof ret.profile === "object") {
+        merged.profile = Object.assign({}, ret.profile, {
+          createdAt: d,
+          memberSince: d,
+          created_at: d
+        });
+      }
+      return merged;
+    }
+
+    function spoofSnowflakeTimestampForCurrentUser(args, ret) {
+      var ms = getSpoofAccountDateMs();
+      if (ms == null || ret == null) return ret;
+      if (__larpCachedCurrentUserId == null) updateLarpCurrentUserIdCache();
+      if (!__larpCachedCurrentUserId) return ret;
+      var sid = null;
+      if (args && args.length) {
+        var a0 = args[0];
+        if (typeof a0 === "bigint") sid = String(a0);
+        else if (typeof a0 === "string" && /^\d{10,30}$/.test(a0)) sid = a0;
+        else if (typeof a0 === "number" && isFinite(a0)) sid = String(Math.trunc(a0));
+        else if (a0 != null && a0.id != null) {
+          var ids = String(a0.id);
+          if (/^\d{10,30}$/.test(ids)) sid = ids;
+        }
+      }
+      if (sid != null && String(sid) === __larpCachedCurrentUserId) return Math.trunc(ms);
+      return ret;
+    }
+
+    function patchMemberSinceProps(props) {
+      var ms = getSpoofAccountDateMs();
+      if (ms == null || !props) return;
+      var d = new Date(ms);
+      if (props.timestamp != null) props.timestamp = ms;
+      if (props.createdAt != null) props.createdAt = d;
+      if (props.date != null) props.date = d;
+      if (props.memberSince != null) props.memberSince = d;
+      if (props.value != null && typeof props.value === "number" && props.value > 1e11) props.value = ms;
+      if (props.user && isCurrentUserId(props.user.id)) {
+        props.user = applyMemberSinceToUserRecord(props.user);
+      }
+    }
   
     function larpUnpatchAll() {
       for (var ui = 0; ui < unpatches.length; ui++) {
@@ -859,7 +940,7 @@ var LARP_UI_TAG = "v11.1.5";
           if (__larpInsideUserStoreWrap || __larpInsideProxyTrap) return ret;
           __larpInsideUserStoreWrap = true;
           try {
-            return wrap(ret);
+            return wrap(applyMemberSinceToUserRecord(ret));
           } finally {
             __larpInsideUserStoreWrap = false;
           }
@@ -868,7 +949,7 @@ var LARP_UI_TAG = "v11.1.5";
           if (__larpInsideUserStoreWrap || __larpInsideProxyTrap) return ret;
           __larpInsideUserStoreWrap = true;
           try {
-            return wrap(ret);
+            return wrap(applyMemberSinceToUserRecord(ret));
           } finally {
             __larpInsideUserStoreWrap = false;
           }
@@ -884,7 +965,7 @@ var LARP_UI_TAG = "v11.1.5";
         if (typeof findAll !== "function") return;
         var epochRe = /1420070400000/;
         var shiftRe = />>\s*22|<<\s*22n|\*\s*4194304|4423680|\/\s*4194304/;
-        var maxPatches = 14;
+        var maxPatches = 50;
         var patched = 0;
   
         var mods = findAll(function (exp) {
@@ -897,7 +978,6 @@ var LARP_UI_TAG = "v11.1.5";
               if (typeof v !== "function") continue;
               var fs = Function.prototype.toString.call(v);
               if (!epochRe.test(fs) || !shiftRe.test(fs)) continue;
-              if (fs.length > 2200) continue;
               return true;
             } catch (_e0) {}
           }
@@ -917,27 +997,10 @@ var LARP_UI_TAG = "v11.1.5";
               if (typeof v !== "function") continue;
               var fs = Function.prototype.toString.call(v);
               if (!epochRe.test(fs) || !shiftRe.test(fs)) continue;
-              if (fs.length > 2200) continue;
   
               unpatches.push(
                 after(k, exp, function (args, ret) {
-                  var ms = parseAccountDateIsoMs(storage.spoofAccountDateIso);
-                  if (ms == null) return ret;
-                  if (__larpCachedCurrentUserId == null) updateLarpCurrentUserIdCache();
-                  if (!__larpCachedCurrentUserId) return ret;
-                  var sid = null;
-                  if (args && args.length) {
-                    var a0 = args[0];
-                    if (typeof a0 === "bigint") sid = String(a0);
-                    else if (typeof a0 === "string" && /^\d{10,30}$/.test(a0)) sid = a0;
-                    else if (typeof a0 === "number" && isFinite(a0)) sid = String(Math.trunc(a0));
-                    else if (a0 != null && a0.id != null) {
-                      var ids = String(a0.id);
-                      if (/^\d{10,30}$/.test(ids)) sid = ids;
-                    }
-                  }
-                  if (sid != null && String(sid) === __larpCachedCurrentUserId) return Math.trunc(ms);
-                  return ret;
+                  return spoofSnowflakeTimestampForCurrentUser(args, ret);
                 })
               );
               patched++;
@@ -949,10 +1012,78 @@ var LARP_UI_TAG = "v11.1.5";
       }
     }
   
+    function patchExtractTimestampHelpers() {
+      try {
+        var keys = [
+          "extractTimestamp",
+          "timestampFromSnowflake",
+          "snowflakeToTimestamp",
+          "getCreationDateFromSnowflake",
+          "getAccountCreationDate"
+        ];
+        var ki;
+        for (ki = 0; ki < keys.length; ki++) {
+          try {
+            var mod = findByProps(keys[ki]);
+            if (!mod || typeof mod[keys[ki]] !== "function") continue;
+            unpatches.push(
+              after(keys[ki], mod, function (args, ret) {
+                return spoofSnowflakeTimestampForCurrentUser(args, ret);
+              })
+            );
+          } catch (_ek) {}
+        }
+      } catch (e) {
+        console.error("[Larp] patchExtractTimestampHelpers failed", e);
+      }
+    }
+
+    function patchFluxProfileFetch() {
+      try {
+        var FD = findByProps("dispatch", "wait");
+        if (!FD || typeof FD.dispatch !== "function") return;
+        unpatches.push(after("dispatch", FD, function (args) {
+          var a = args && args[0];
+          if (!a || typeof a !== "object") return;
+          var ms = getSpoofAccountDateMs();
+          if (ms == null) return;
+          var uid = a.userId || (a.user && a.user.id) || (a.profile && a.profile.userId);
+          if (!isCurrentUserId(uid)) return;
+          var d = new Date(ms);
+          if (a.user && typeof a.user === "object") {
+            a.user.createdTimestamp = ms;
+            a.user.createdAtTimestamp = ms;
+            a.user.createdAt = d;
+            a.user.created_at = d;
+          }
+          if (a.userProfile && typeof a.userProfile === "object") {
+            a.userProfile.createdAt = d;
+            a.userProfile.memberSince = d;
+            a.userProfile.created_at = d;
+          }
+          if (a.profile && typeof a.profile === "object") {
+            a.profile.createdAt = d;
+            a.profile.memberSince = d;
+            a.profile.created_at = d;
+          }
+        }));
+      } catch (e) {
+        console.error("[Larp] patchFluxProfileFetch failed", e);
+      }
+    }
+
     function patchUserProfileRecordMemberSince() {
       try {
         var storeNames = ["UserProfileStore", "UserProfileStoreV2", "GuildMemberProfileStore"];
-        var methods = ["getUserProfile", "getProfile", "getMutableUserProfiles", "getMutableUsers"];
+        var methods = [
+          "getUserProfile",
+          "getProfile",
+          "getMutableUserProfiles",
+          "getMutableUsers",
+          "getGuildMemberProfile",
+          "getCachedUserProfile",
+          "getGuildMember"
+        ];
         for (var si = 0; si < storeNames.length; si++) {
           var S = findByStoreName(storeNames[si]);
           if (!S) continue;
@@ -962,39 +1093,32 @@ var LARP_UI_TAG = "v11.1.5";
             if (__larpProfileStorePatched[pkey]) continue;
             if (typeof S[mn] !== "function") continue;
             __larpProfileStorePatched[pkey] = true;
-  
+
             unpatches.push(
               after(mn, S, function (args, ret) {
-                var ms = parseAccountDateIsoMs(storage.spoofAccountDateIso);
-                if (ms == null || ret == null) return ret;
+                if (ret == null) return ret;
                 var a0 = args && args[0];
                 var uid =
                   a0 != null && typeof a0 === "object"
                     ? a0.id || a0.userId || (a0.user && (a0.user.id || a0.user.userId))
                     : a0;
-                if (uid == null) return ret;
-                if (__larpCachedCurrentUserId == null) updateLarpCurrentUserIdCache();
-                if (!__larpCachedCurrentUserId) return ret;
-                if (String(uid) !== __larpCachedCurrentUserId) return ret;
-                if (typeof ret !== "object") return ret;
-                try {
-                  var d = new Date(ms);
-                  var merged = Object.assign({}, ret, {
-                    createdAt: d,
-                    memberSince: d,
-                    joinedAt: d,
-                    createdTimestamp: ms
-                  });
-                  if (ret.user && typeof ret.user === "object") {
-                    merged.user = Object.assign({}, ret.user, {
-                      createdAt: d,
-                      createdTimestamp: ms
-                    });
+                if (Array.isArray(ret)) {
+                  var outArr = [];
+                  for (var ai = 0; ai < ret.length; ai++) {
+                    outArr.push(spoofProfileRecord(ret[ai], uid));
                   }
-                  return merged;
-                } catch (_e) {
-                  return ret;
+                  return outArr;
                 }
+                if (ret && typeof ret === "object" && uid == null) {
+                  var mapped = Object.assign({}, ret);
+                  for (var rk in ret) {
+                    if (Object.prototype.hasOwnProperty.call(ret, rk)) {
+                      mapped[rk] = spoofProfileRecord(ret[rk], rk);
+                    }
+                  }
+                  return mapped;
+                }
+                return spoofProfileRecord(ret, uid);
               })
             );
           }
@@ -1179,6 +1303,13 @@ var LARP_UI_TAG = "v11.1.5";
             /PremiumTabBadge|SubscriptionBadge|NitroSettings|NitroTab|PremiumSettings/i.test(n)
           ) {
             return ret;
+          }
+          if (
+            n &&
+            typeof n === "string" &&
+            /MemberSince|RegistrationDate|ProfileCreated|AccountCreated|UserRegistration|ProfileMember/i.test(n)
+          ) {
+            patchMemberSinceProps(ret.props);
           }
           if (storage.hideNative && storage.hideNative.orbBalance && n && typeof n === "string") {
             if (/orb/i.test(n) && /balance|wallet|currency|amount|credits|ledger|inventory|wallet/i.test(n)) {
@@ -1653,6 +1784,8 @@ export default {
     patchUsername();
     updateLarpCurrentUserIdCache();
     patchSnowflakeConvertersForAccountDate();
+    patchExtractTimestampHelpers();
+    patchFluxProfileFetch();
     patchUserProfileRecordMemberSince();
     patchBadges();
     patchBadgeIconsViaJsx();
