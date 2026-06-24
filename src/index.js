@@ -1,7 +1,6 @@
-(function () {
-    "use strict";
-  
-    var LARP_UI_TAG = "v11.1.5";
+"use strict";
+
+var LARP_UI_TAG = "v11.1.5";
   
     var React = vendetta.metro.common.React;
     var RN = vendetta.metro.common.ReactNative;
@@ -1485,24 +1484,23 @@
       );
     }
   
-    return {
-      onLoad: function () {
-        larpUnpatchAll();
-        try {
-          warmLarpIconAssetCache();
-        } catch (_wm) {}
-        try {
-          showToast("[Larp] " + LARP_UI_TAG + " enabled", getAssetIDByName("Check"));
-        } catch (_) {}
-        patchUsername();
-        patchSnowflakeConvertersForAccountDate();
-        patchUserProfileRecordMemberSince();
-        patchBadges();
-        patchBadgeIconsViaJsx();
-      },
-      onUnload: function () {
-        larpUnpatchAll();
-      },
-      settings: Settings
-    };
-  })()
+export default {
+  onLoad: function () {
+    larpUnpatchAll();
+    try {
+      warmLarpIconAssetCache();
+    } catch (_wm) {}
+    try {
+      showToast("[Larp] " + LARP_UI_TAG + " enabled", getAssetIDByName("Check"));
+    } catch (_) {}
+    patchUsername();
+    patchSnowflakeConvertersForAccountDate();
+    patchUserProfileRecordMemberSince();
+    patchBadges();
+    patchBadgeIconsViaJsx();
+  },
+  onUnload: function () {
+    larpUnpatchAll();
+  },
+  settings: Settings
+};

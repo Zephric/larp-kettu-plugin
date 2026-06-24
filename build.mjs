@@ -73,7 +73,7 @@ await bundle.write({
   },
   format: "iife",
   compact: true,
-  exports: "named",
+  exports: "default",
 });
 await bundle.close();
 
