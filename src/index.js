@@ -535,6 +535,8 @@ var LARP_UI_TAG = "v11.1.5";
   
     var unpatches = [];
     var __larpInsideUserStoreWrap = false;
+    var __larpInsideProxyTrap = false;
+    var __larpCachedCurrentUserId = null;
     var __larpProfileStorePatched = {};
     var UserStoreRef = null;
   
@@ -545,6 +547,39 @@ var LARP_UI_TAG = "v11.1.5";
     function clearLarpGetUserCache() {
       __larpGetUserCache.clear();
       __larpGetUserCacheQueue.length = 0;
+    }
+
+    function updateLarpCurrentUserIdCache() {
+      if (!UserStoreRef || typeof UserStoreRef.getCurrentUser !== "function") {
+        __larpCachedCurrentUserId = null;
+        return;
+      }
+      __larpInsideProxyTrap = true;
+      try {
+        var u = UserStoreRef.getCurrentUser();
+        __larpCachedCurrentUserId = u && u.id != null ? String(u.id) : null;
+      } catch (_uidCache) {
+        __larpCachedCurrentUserId = null;
+      } finally {
+        __larpInsideProxyTrap = false;
+      }
+    }
+
+    function isCurrentUserId(uid) {
+      if (uid == null) return false;
+      if (__larpCachedCurrentUserId == null) updateLarpCurrentUserIdCache();
+      if (__larpCachedCurrentUserId == null) return false;
+      return String(uid) === __larpCachedCurrentUserId;
+    }
+
+    function readTargetUsername(user) {
+      if (!user) return "";
+      try {
+        var u = Reflect.get(user, "username", user);
+        return u == null ? "" : String(u);
+      } catch (_ru) {
+        return "";
+      }
     }
   
     function cachedGetUser(uid) {
@@ -701,9 +736,9 @@ var LARP_UI_TAG = "v11.1.5";
     }
 
     function findSpoofEntryForBadges(uid, profileUser) {
-      var pun = profileUser && normName(profileUser.username || "");
-      var cur = UserStoreRef && UserStoreRef.getCurrentUser && UserStoreRef.getCurrentUser();
-      var curId = cur && cur.id;
+      var pun = profileUser ? normName(readTargetUsername(profileUser)) : "";
+      if (__larpCachedCurrentUserId == null) updateLarpCurrentUserIdCache();
+      var curId = __larpCachedCurrentUserId;
       var others = storage.otherProfiles;
       if (!Array.isArray(others)) others = [];
       var oi;
@@ -732,7 +767,7 @@ var LARP_UI_TAG = "v11.1.5";
   
     function getUsernameSpoofReplace(user) {
       if (!user) return null;
-      var pun = normName(user.username || "");
+      var pun = normName(readTargetUsername(user));
       if (!pun) return null;
       if (normName(storage.matchUsername || "") === pun && (storage.replaceUsername || "").trim()) {
         return (storage.replaceUsername || "").trim();
@@ -756,12 +791,10 @@ var LARP_UI_TAG = "v11.1.5";
       if (!user) return false;
       if (getUsernameSpoofReplace(user)) return true;
       if (parseAccountDateIsoMs(storage.spoofAccountDateIso) == null) return false;
-      var cur =
-        UserStoreRef &&
-        UserStoreRef.getCurrentUser &&
-        UserStoreRef.getCurrentUser();
-      if (!cur || cur.id == null || user.id == null) return false;
-      return String(user.id) === String(cur.id);
+      if (__larpCachedCurrentUserId == null) updateLarpCurrentUserIdCache();
+      var uid = Reflect.get(user, "id", user);
+      if (uid == null) return false;
+      return isCurrentUserId(uid);
     }
   
     function buildUserProxy(user) {
@@ -770,54 +803,42 @@ var LARP_UI_TAG = "v11.1.5";
   
       var proxy = new Proxy(user, {
         get: function (t, p, recv) {
-          var cur =
-            UserStoreRef &&
-            UserStoreRef.getCurrentUser &&
-            UserStoreRef.getCurrentUser();
           var spoofCreatedMs = parseAccountDateIsoMs(storage.spoofAccountDateIso);
+          var targetId = Reflect.get(t, "id", t);
           if (
             spoofCreatedMs != null &&
-            cur &&
-            cur.id != null &&
-            t &&
-            t.id != null &&
-            String(t.id) === String(cur.id)
+            targetId != null &&
+            isCurrentUserId(targetId)
           ) {
             if (p === "createdTimestamp" || p === "createdAtTimestamp") return spoofCreatedMs;
             if (p === "createdAt" || p === "created_at") return new Date(spoofCreatedMs);
           }
-  
-          if (!getUsernameSpoofReplace(t)) return Reflect.get(t, p, recv);
+
+          if (!getUsernameSpoofReplace(t)) return Reflect.get(t, p, t);
           var replace = getUsernameSpoofReplace(t);
-  
+
           if (p === "username") return replace;
-  
+
           if (p === "tag") {
-            var tag = Reflect.get(t, "tag", recv);
+            var tag = Reflect.get(t, "tag", t);
             if (typeof tag === "string") {
               var hash = tag.indexOf("#");
               if (hash !== -1) return replace + tag.slice(hash);
             }
           }
-  
-          return Reflect.get(t, p, recv);
+
+          return Reflect.get(t, p, t);
         },
         ownKeys: function (t) {
           return Reflect.ownKeys(t);
         },
         getOwnPropertyDescriptor: function (t, p) {
-          var cur =
-            UserStoreRef &&
-            UserStoreRef.getCurrentUser &&
-            UserStoreRef.getCurrentUser();
           var spoofCreatedMs = parseAccountDateIsoMs(storage.spoofAccountDateIso);
+          var targetId = Reflect.get(t, "id", t);
           if (
             spoofCreatedMs != null &&
-            cur &&
-            cur.id != null &&
-            t &&
-            t.id != null &&
-            String(t.id) === String(cur.id)
+            targetId != null &&
+            isCurrentUserId(targetId)
           ) {
             if (p === "createdTimestamp" || p === "createdAtTimestamp") {
               return { configurable: true, enumerable: true, value: spoofCreatedMs };
@@ -826,7 +847,7 @@ var LARP_UI_TAG = "v11.1.5";
               return { configurable: true, enumerable: true, value: new Date(spoofCreatedMs) };
             }
           }
-  
+
           if (!getUsernameSpoofReplace(t)) return Reflect.getOwnPropertyDescriptor(t, p);
           var replace = getUsernameSpoofReplace(t);
           if (p === "username") {
@@ -859,6 +880,7 @@ var LARP_UI_TAG = "v11.1.5";
       __larpProfileStorePatched = {};
       clearLarpGetUserCache();
       wrapProxyByUser = new WeakMap();
+      __larpCachedCurrentUserId = null;
     }
   
     function patchUsername() {
@@ -868,7 +890,7 @@ var LARP_UI_TAG = "v11.1.5";
         if (!UserStore || typeof UserStore.getCurrentUser !== "function") return;
   
         unpatches.push(after("getCurrentUser", UserStore, function (_args, ret) {
-          if (__larpInsideUserStoreWrap) return ret;
+          if (__larpInsideUserStoreWrap || __larpInsideProxyTrap) return ret;
           __larpInsideUserStoreWrap = true;
           try {
             return wrap(ret);
@@ -877,7 +899,7 @@ var LARP_UI_TAG = "v11.1.5";
           }
         }));
         unpatches.push(after("getUser", UserStore, function (_args, ret) {
-          if (__larpInsideUserStoreWrap) return ret;
+          if (__larpInsideUserStoreWrap || __larpInsideProxyTrap) return ret;
           __larpInsideUserStoreWrap = true;
           try {
             return wrap(ret);
@@ -935,11 +957,8 @@ var LARP_UI_TAG = "v11.1.5";
                 after(k, exp, function (args, ret) {
                   var ms = parseAccountDateIsoMs(storage.spoofAccountDateIso);
                   if (ms == null) return ret;
-                  var cur =
-                    UserStoreRef &&
-                    UserStoreRef.getCurrentUser &&
-                    UserStoreRef.getCurrentUser();
-                  if (!cur || cur.id == null) return ret;
+                  if (__larpCachedCurrentUserId == null) updateLarpCurrentUserIdCache();
+                  if (!__larpCachedCurrentUserId) return ret;
                   var sid = null;
                   if (args && args.length) {
                     var a0 = args[0];
@@ -951,7 +970,7 @@ var LARP_UI_TAG = "v11.1.5";
                       if (/^\d{10,30}$/.test(ids)) sid = ids;
                     }
                   }
-                  if (sid != null && String(sid) === String(cur.id)) return Math.trunc(ms);
+                  if (sid != null && String(sid) === __larpCachedCurrentUserId) return Math.trunc(ms);
                   return ret;
                 })
               );
@@ -988,12 +1007,9 @@ var LARP_UI_TAG = "v11.1.5";
                     ? a0.id || a0.userId || (a0.user && (a0.user.id || a0.user.userId))
                     : a0;
                 if (uid == null) return ret;
-                var cur =
-                  UserStoreRef &&
-                  UserStoreRef.getCurrentUser &&
-                  UserStoreRef.getCurrentUser();
-                if (!cur || cur.id == null) return ret;
-                if (String(uid) !== String(cur.id)) return ret;
+                if (__larpCachedCurrentUserId == null) updateLarpCurrentUserIdCache();
+                if (!__larpCachedCurrentUserId) return ret;
+                if (String(uid) !== __larpCachedCurrentUserId) return ret;
                 if (typeof ret !== "object") return ret;
                 try {
                   var d = new Date(ms);
@@ -1270,6 +1286,7 @@ var LARP_UI_TAG = "v11.1.5";
   
       function refresh() {
         clearLarpGetUserCache();
+        updateLarpCurrentUserIdCache();
         force(function (n) {
           return n + 1;
         });
@@ -1668,6 +1685,7 @@ export default {
       showToast("[Larp] " + LARP_UI_TAG + " enabled", getAssetIDByName("Check"));
     } catch (_) {}
     patchUsername();
+    updateLarpCurrentUserIdCache();
     patchSnowflakeConvertersForAccountDate();
     patchUserProfileRecordMemberSince();
     patchBadges();
