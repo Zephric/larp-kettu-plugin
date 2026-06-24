@@ -177,19 +177,58 @@ var LARP_UI_TAG = "v11.1.5";
   
     function makeBadgePayload(b) {
       var idOut = "larp-" + b.id;
-      if (NITRO_LARP_SET[b.id] || BOOST_LARP_SET[b.id]) {
-        return { id: idOut, description: b.label, icon: " " };
-      }
+      var payload = {
+        id: idOut,
+        description: b.label,
+        source: { uri: b.url }
+      };
       var assetNum = firstResolvedAsset(collectAssetNames(b));
       if (assetNum != null) {
-        return {
-          id: idOut,
-          icon: assetNum,
-          source: assetNum,
-          description: b.label
-        };
+        payload.icon = assetNum;
       }
-      return { id: idOut, description: b.label, icon: " " };
+      return payload;
+    }
+
+    function sanitizeLarpBadgeRow(row) {
+      if (!row || String(row.id || "").indexOf("larp-") !== 0) return row;
+      var copy = Object.assign({}, row);
+      if (copy.icon != null) {
+        var iconNum =
+          typeof copy.icon === "number"
+            ? copy.icon
+            : typeof copy.icon === "string"
+              ? parseInt(copy.icon, 10)
+              : NaN;
+        if (isNaN(iconNum) || !isFinite(iconNum)) {
+          delete copy.icon;
+        } else {
+          copy.icon = iconNum;
+        }
+      }
+      if (!copy.source || typeof copy.source !== "object") {
+        var innerId = String(copy.id).slice(5);
+        for (var si = 0; si < BADGES.length; si++) {
+          if (BADGES[si].id === innerId) {
+            copy.source = { uri: BADGES[si].url };
+            break;
+          }
+        }
+      }
+      return copy;
+    }
+
+    function isLikelyNonProfileBadgeHook(args, ret) {
+      var u = args && args[0];
+      if (u && typeof u === "object") {
+        if (u.renderLocation === "settings" || u.renderLocation === "premium") return true;
+        if (u.context === "settings" || u.context === "premium") return true;
+        if (u.isPremiumTab === true || u.premiumTab === true) return true;
+        if (u.premiumType != null && u.username == null && u.globalName == null) return true;
+      }
+      if (ret && ret.length === 1 && isNativeNitroLike(ret[0]) && !extractBadgeHookUid(u)) {
+        return true;
+      }
+      return false;
     }
   
     function collectAssetNames(b) {
@@ -1068,6 +1107,9 @@ var LARP_UI_TAG = "v11.1.5";
           if (!spoofCtx || !hasAnyBadgesInMap(badgesMap)) {
             return applyNonSpoofLocalFilters(ret);
           }
+          if (isLikelyNonProfileBadgeHook(args, ret)) {
+            return applyNonSpoofLocalFilters(ret);
+          }
   
           var base = ret.filter(function (x) {
             return !x || !x.id || String(x.id).indexOf("larp-") !== 0;
@@ -1103,7 +1145,7 @@ var LARP_UI_TAG = "v11.1.5";
             if (!badgesMap[b.id]) continue;
             if (NITRO_LARP_SET[b.id] && b.id !== nitroPick) continue;
             if (BOOST_LARP_SET[b.id] && b.id !== boostPick) continue;
-            var row = makeBadgePayload(b);
+            var row = sanitizeLarpBadgeRow(makeBadgePayload(b));
             if (nitroPick != null && b.id === nitroPick) {
               nitroPayload = row;
             } else if (boostPick != null && b.id === boostPick) {
@@ -1149,6 +1191,13 @@ var LARP_UI_TAG = "v11.1.5";
           var Type = args[0];
           if (typeof Type !== "function") return ret;
           var n = Type.displayName || Type.name;
+          if (
+            n &&
+            typeof n === "string" &&
+            /PremiumTabBadge|SubscriptionBadge|NitroSettings|NitroTab|PremiumSettings/i.test(n)
+          ) {
+            return ret;
+          }
           if (storage.hideNative && storage.hideNative.orbBalance && n && typeof n === "string") {
             if (/orb/i.test(n) && /balance|wallet|currency|amount|credits|ledger|inventory|wallet/i.test(n)) {
               var hideOrbBal = {
