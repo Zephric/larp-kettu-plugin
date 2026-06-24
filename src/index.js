@@ -572,10 +572,10 @@ var LARP_UI_TAG = "v11.1.5";
       return String(uid) === __larpCachedCurrentUserId;
     }
 
-    function readTargetUsername(user) {
-      if (!user) return "";
+    function readTargetUsername(target) {
+      if (!target) return "";
       try {
-        var u = Reflect.get(user, "username", user);
+        var u = target.username;
         return u == null ? "" : String(u);
       } catch (_ru) {
         return "";
@@ -788,73 +788,39 @@ var LARP_UI_TAG = "v11.1.5";
     }
   
     function shouldWrapUserForProxy(user) {
-      if (!user) return false;
-      if (getUsernameSpoofReplace(user)) return true;
-      if (parseAccountDateIsoMs(storage.spoofAccountDateIso) == null) return false;
-      if (__larpCachedCurrentUserId == null) updateLarpCurrentUserIdCache();
-      var uid = Reflect.get(user, "id", user);
-      if (uid == null) return false;
-      return isCurrentUserId(uid);
+      return getUsernameSpoofReplace(user) != null;
     }
-  
+
+    function readProxyTargetValue(t, p) {
+      var v = t[p];
+      return typeof v === "function" ? v.bind(t) : v;
+    }
+
     function buildUserProxy(user) {
       var prev = wrapProxyByUser.get(user);
       if (prev) return prev;
-  
+
       var proxy = new Proxy(user, {
-        get: function (t, p, recv) {
-          var spoofCreatedMs = parseAccountDateIsoMs(storage.spoofAccountDateIso);
-          var targetId = Reflect.get(t, "id", t);
-          if (
-            spoofCreatedMs != null &&
-            targetId != null &&
-            isCurrentUserId(targetId)
-          ) {
-            if (p === "createdTimestamp" || p === "createdAtTimestamp") return spoofCreatedMs;
-            if (p === "createdAt" || p === "created_at") return new Date(spoofCreatedMs);
+        get: function (t, p) {
+          if (p === "username") {
+            var rep = getUsernameSpoofReplace(t);
+            if (rep) return rep;
           }
-
-          if (!getUsernameSpoofReplace(t)) return Reflect.get(t, p, t);
-          var replace = getUsernameSpoofReplace(t);
-
-          if (p === "username") return replace;
-
           if (p === "tag") {
-            var tag = Reflect.get(t, "tag", t);
-            if (typeof tag === "string") {
-              var hash = tag.indexOf("#");
-              if (hash !== -1) return replace + tag.slice(hash);
+            var repTag = getUsernameSpoofReplace(t);
+            if (repTag && typeof t.tag === "string") {
+              var hash = t.tag.indexOf("#");
+              if (hash !== -1) return repTag + t.tag.slice(hash);
             }
           }
-
-          return Reflect.get(t, p, t);
-        },
-        ownKeys: function (t) {
-          return Reflect.ownKeys(t);
+          return readProxyTargetValue(t, p);
         },
         getOwnPropertyDescriptor: function (t, p) {
-          var spoofCreatedMs = parseAccountDateIsoMs(storage.spoofAccountDateIso);
-          var targetId = Reflect.get(t, "id", t);
-          if (
-            spoofCreatedMs != null &&
-            targetId != null &&
-            isCurrentUserId(targetId)
-          ) {
-            if (p === "createdTimestamp" || p === "createdAtTimestamp") {
-              return { configurable: true, enumerable: true, value: spoofCreatedMs };
-            }
-            if (p === "createdAt" || p === "created_at") {
-              return { configurable: true, enumerable: true, value: new Date(spoofCreatedMs) };
-            }
-          }
-
-          if (!getUsernameSpoofReplace(t)) return Reflect.getOwnPropertyDescriptor(t, p);
-          var replace = getUsernameSpoofReplace(t);
-          if (p === "username") {
+          if (p === "username" && getUsernameSpoofReplace(t)) {
             return {
               configurable: true,
               enumerable: true,
-              value: replace
+              value: getUsernameSpoofReplace(t)
             };
           }
           return Reflect.getOwnPropertyDescriptor(t, p);
