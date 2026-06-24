@@ -574,6 +574,18 @@ var LARP_UI_TAG = "v11.1.5";
       return false;
     }
   
+    function shouldApplyPrimaryBadges(uid, pun, curId) {
+      if (uid == null || curId == null || String(uid) !== String(curId)) return false;
+      if (!hasAnyBadgesInMap(storage.badges)) return false;
+      var m = normName(storage.matchUsername || "");
+      var r = (storage.replaceUsername || "").trim();
+      if (!m && !r) return true;
+      if (m && pun && pun === m) return true;
+      if (pun && r && usernameMatchesSpoofPair(pun, storage.matchUsername, storage.replaceUsername)) return true;
+      if (!pun && m) return true;
+      return false;
+    }
+
     function findSpoofEntryForBadges(uid, profileUser) {
       var pun = profileUser && normName(profileUser.username || "");
       var cur = UserStoreRef && UserStoreRef.getCurrentUser && UserStoreRef.getCurrentUser();
@@ -592,16 +604,11 @@ var LARP_UI_TAG = "v11.1.5";
         if (pun && usernameMatchesSpoofPair(pun, op2.matchUsername, op2.replaceUsername)) {
           return { badgesMap: op2.badges && typeof op2.badges === "object" ? op2.badges : {} };
         }
+        if (pun && normName(op2.matchUsername || "") === pun && hasAnyBadgesInMap(op2.badges)) {
+          return { badgesMap: op2.badges && typeof op2.badges === "object" ? op2.badges : {} };
+        }
       }
-      if (
-        uid != null &&
-        curId != null &&
-        String(uid) === String(curId) &&
-        (!pun ||
-          usernameMatchesSpoofPair(pun, storage.matchUsername, storage.replaceUsername)) &&
-        normName(storage.matchUsername || "") &&
-        (storage.replaceUsername || "").trim()
-      ) {
+      if (shouldApplyPrimaryBadges(uid, pun, curId)) {
         return { badgesMap: storage.badges && typeof storage.badges === "object" ? storage.badges : {} };
       }
       return null;
@@ -1407,7 +1414,7 @@ var LARP_UI_TAG = "v11.1.5";
         }, "Larp"),
         React.createElement(Text, {
           style: { color: C.muted, fontSize: 13, marginTop: 2, marginBottom: 16 }
-        }, "Client-side only."),
+        }, "Client-side only. Match username is enough for badges; Show as is only for renaming."),
   
         section(
           "Username",
