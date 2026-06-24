@@ -1,0 +1,41 @@
+# Larp
+
+Kettu plugin that locally spoofs profile badges, username display, member-since date, and native profile icon visibility. Changes are client-side preview only and do not modify your Discord account.
+
+## Install
+
+1. Build the plugin (or use the published `dist/` from GitHub Pages).
+2. In Discord (with Kettu), open **Settings → Plugins**.
+3. Paste the URL to this plugin's hosted `manifest.json` folder (not the raw file on GitHub).
+
+Example after deploying to GitHub Pages:
+
+```
+https://<your-username>.github.io/<repo-name>/
+```
+
+Kettu fetches `manifest.json` from that URL and loads the bundled `index.js`.
+
+## Develop
+
+```bash
+npm install
+npm run build
+```
+
+Output is written to `dist/manifest.json` and `dist/index.js`. The build adds a SHA-256 `hash` field to the manifest for update detection.
+
+To test locally, serve `dist/` over HTTP (e.g. `npx http-server dist -p 4040`) and use your LAN URL in the Plugins page.
+
+## Structure
+
+| Path | Purpose |
+|------|---------|
+| `manifest.json` | Plugin metadata (name, authors, entrypoint) |
+| `src/index.js` | Plugin source |
+| `build.mjs` | Rollup bundler + manifest hash generation |
+| `dist/` | Built plugin (install from here) |
+
+## Authors
+
+Update `manifest.json` with your Discord user ID in the `authors` field before publishing.

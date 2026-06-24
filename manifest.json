@@ -1,0 +1,14 @@
+{
+  "name": "Larp",
+  "description": "Locally spoof profile badges, username display, member-since date, and hide native profile icons. Client-side preview only.",
+  "authors": [
+    {
+      "name": "mrrob.SAGE",
+      "id": "1496788937178611763"
+    }
+  ],
+  "main": "src/index.js",
+  "vendetta": {
+    "icon": "ic_badge_staff"
+  }
+}
